@@ -1,0 +1,283 @@
+---
+title: "Sample Data"
+author: "Sabrina Heitmann"
+date: "9/30/2020"
+output: html_document
+---
+
+# In this code, I merged the metadata for the Hermiston and Corvallis genotypes to my uncorrected Sampledata (which has all of the info I sent to the CGRB). There were some discrepencies of genotype names between datasheets so I changed the Sample data Genotype names to reflect the metadata Genotype names. I then fixed any transcribing errors. 
+* Note that BESC-unk (formally known as YK-unk) does not have any meta data associated with it
+
+```{r include=FALSE}
+library(tidyverse)
+library(magrittr)
+```
+
+```{r}
+meta <- read.csv("data/gardenData/GenotypeMetadata_new.csv",as.is=T)
+sample_data <- read.csv("data/gardenData/SampleData_uncorrected.csv", as.is=T, fileEncoding = 'UTF-8-BOM') 
+```
+
+## Joined metadata and my sample data sheets together 
+```{r}
+new <- left_join(sample_data, meta, by = "Genotype")
+```
+
+## Identify the rows that are NA (meaning that there was no match in the metadata file) and group by genotype
+Working backwards from NAs to change labels
+```{r}
+new_NA <- new[is.na(new$Latitude_New),]
+
+new_NA %>% 
+  group_by(Genotype) %>%
+  count()
+```
+
+## Change "B-" to "BESC-" in sample datasheet
+All of the BESC genotypes in sample_data are actually labeled "B-" so need to change to "BESC-" to match meta datasheet
+Left join again
+```{r}
+sample_data <- sample_data %>%
+  mutate(Genotype = gsub("B-", "BESC-", Genotype, fixed = TRUE))
+
+new <- left_join(sample_data, meta, by = "Genotype")
+
+new_NA <- new[is.na(new$Latitude_New),]
+
+```
+
+## Change "YK-", "CW-", "LS-" to "BESC-" and omit space from PCR_control in sample datasheet
+Left join again
+```{r}
+sample_data <- sample_data %<>%
+  mutate(Genotype = gsub("YK-", "BESC-", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("CW-", "BESC-", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("LS-", "BESC-", Genotype, fixed = TRUE)) %>% 
+  mutate(Genotype = gsub("UNK", "unk", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("PCR_control ", "PCR_control", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("BESC-unk", "YK-unk", Genotype, fixed = TRUE))
+
+new <- left_join(sample_data, meta, by = "Genotype")
+
+new_NA <- new[is.na(new$Latitude_New),]
+```
+
+## Remove controls and BESC-unk only from new_NA datasheet to see which genotypes need to be fixed in SampleData
+
+```{r}
+new_NA <- new_NA %>% 
+  filter(!grepl("Extract_control", Genotype))
+
+new_NA <- new_NA %>% 
+  filter(!grepl("Pos_control", Genotype))
+
+new_NA <- new_NA %>% 
+  filter(!grepl("PCR_control", Genotype))
+
+new_NA <- new_NA %>% 
+  filter(!grepl("YK-unk", Genotype))
+    
+```
+
+## Sample_data Genotype changes
+* "EWG_2019_Lib02_s128" - changed "-" to "BESC-833"
+* "EWG_2019_Lib02_s171" - changed "-" to "YK-unk"
+* "EWG_2019_Lib03_s270" - changed "unk" to "YK-unk"
+* "EWG_2019_Lib01_s297" - changed "MCMN-27" to "MCMN-27-5"
+* "EWG_2019_Lib01_s360" - changed "b-196" to "BESC-196"
+* "EWG_2019_Lib02_s351" - changed "MCM-2" to "MCMN-27-5"
+* "EWG_2019_Lib01_s478" - changed "Extraction_control" to "Extract_control"
+* "EWG_2019_Lib01_s480" - changed "Positive_control" to "Pos_control"
+* "EWG_2019_Lib02_s411" - changed "Positive_control" to "Pos_control"
+```{r results = 'hide'}
+new_NA[,1]
+
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib02_s128"] <- "BESC-833")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib02_s171"] <- "YK-unk")
+
+#check to make sure both row's Genotype values have been changed - YES
+which(sample_data$Genotype == "-")
+
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib03_s270"] <- "YK-unk")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib01_s297"] <- "MCMN-27-5")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib01_s360"] <- "BESC-196")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib02_s351"] <- "MCMN-27-5")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib01_s478"] <- "Extract_control")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib01_s480"] <- "Pos_control")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib02_s411"] <- "Pos_control")
+
+new <- left_join(sample_data, meta, by = "Genotype")
+
+genotypes <- new %>%
+  group_by(Genotype) %>%
+  count()
+```
+
+## There are 60 genotypes so there still must be 1 wrong genotype name. I uploaded the Corvallis_longformat to compare the genotype names. Then I combined the coords to the new Sample
+```{r results = 'hide'}
+
+coords.corv <- read.csv("data/gardenData/Corvallis_longFormat.csv",as.is=T) %>% 
+  mutate(Garden="Corvallis")
+
+coords.herm <- read.csv("data/gardenData/Hermiston_longFormat.csv",as.is=T) %>% 
+  mutate(Garden="Hermiston") %>% 
+  filter(Region != c("Border"))
+
+coords <- rbind(coords.corv, coords.herm)
+
+coords %<>%
+  mutate(Genotype = gsub("YK-", "BESC-", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("CW-", "BESC-", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("LS-", "BESC-", Genotype, fixed = TRUE)) %>% 
+  mutate(Genotype = gsub("UNK", "unk", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("PCR_control ", "PCR_control", Genotype, fixed = TRUE)) %>%
+  mutate(Genotype = gsub("BESC-unk", "YK-unk", Genotype, fixed = TRUE))
+
+# combine meta and coords datasheets to have the full sample information (includes samples that didn't have microbiome data collected)
+all_tree_meta_data <- left_join(coords, meta, by = "Genotype")
+
+all_tree_meta_data = mutate(all_tree_meta_data,
+              ID = paste("C",Col, "R",Row,"B", Block, sep = ""))
+
+new %>% filter(!Genotype %in% coords$Genotype)
+
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib02_s407"] <- "BESC-273")
+
+new <- left_join(sample_data, meta, by = "Genotype")
+
+# Removed R17C29Hermiston and R3C37Corvallis because they had the same key (Row and Column) but were duplicated twice per garden
+new = mutate(new,
+              key = paste("C",C, "R",R,Garden,Genotype, sep = ""))
+
+n_occur <- data.frame(table(new$key))
+duplicate <- n_occur[n_occur$Freq > 1,]
+
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib03_s015"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib01_s301"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib02_s129"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib02_s171"),]
+
+new <- left_join(sample_data, meta, by = "Genotype")
+
+new = mutate(new,
+              key = paste("C",C, "R",R, "B",Garden,Genotype, sep = ""))
+
+n_occur <- data.frame(table(new$key))
+duplicate <- n_occur[n_occur$Freq > 1,]
+removed <- new[(new$key %in% duplicate$Var1),]
+```
+
+Then I combined the coords to the new merged datasheet and edited which variables I wanted to include in my metadata
+* "EWG_2019_Lib02_s021" - Corvallis changed to Hermiston 
+* "EWG_2019_Lib03_s040" - NA changed to 12
+* "EWG_2019_Lib03_s072" - Corvallis changed to Hermiston
+* "EWG_2019_Lib03_s209" - Hermiston changed to Corvallis
+* "EWG_2019_Lib03_s227" - Hermiston changed to Corvallis
+* "EWG_2019_Lib01_s342" - Corvallis changed to Hermiston
+* "EWG_2019_Lib03_s353" - changed to Pos_control
+```{r}
+coords <- coords %>%  
+    mutate(Row = as.numeric(Row)) %>% 
+    mutate(Col = as.numeric(Col))
+
+new <- new %>%  
+    mutate(R = as.numeric(R)) %>% 
+    mutate(C = as.numeric(C))
+
+new = mutate(new,
+              key = paste("C",C, "R",R, "B",Garden,Genotype, sep = ""))
+
+coords = mutate(coords,
+              key = paste("C",Col, "R",Row, "B",Garden,Genotype, sep = ""))
+
+new <- left_join(new, coords, by = "key") 
+
+# filters out NA's in Genotype.y and puts them in new data table
+errors <- 
+  new %>% 
+  filter(is.na(Genotype.y)) %>%
+  filter(!grepl("Extract_control", Genotype.x)) %>% 
+  filter(!grepl("PCR_control", Genotype.x)) %>% 
+  filter(!grepl("Pos_control", Genotype.x))
+
+errors[,1]
+
+#fixes errors
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib02_s021"] <- "Hermiston")
+sample_data <- within(sample_data, R[Sample_ID=="EWG_2019_Lib03_s040"] <- "12")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib03_s072"] <- "Hermiston")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib03_s209"] <- "Corvallis")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib03_s227"] <- "Corvallis")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib01_s342"] <- "Hermiston")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib03_s353"] <- "BESC-1207")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib01_s080"] <- "Hermiston")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib01_s087"] <- "Hermiston")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib02_s002"] <- "Corvallis")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib02_s049"] <- "Hermiston")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib02_s053"] <- "Hermiston")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib02_s147"] <- "BESC-1210") # from BESC-1201 (typo)
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib01_s342"] <- "Hermiston")
+sample_data <- within(sample_data, Garden[Sample_ID=="EWG_2019_Lib01_s366"] <- "Corvallis")
+sample_data <- within(sample_data, R[Sample_ID=="EWG_2019_Lib03_s355"] <- "14") #was R4 on plate datasheet (typo - missing the 1)
+sample_data <- within(sample_data, C[Sample_ID=="EWG_2019_Lib01_s441"] <- "15") #was C5 on plate datasheet (typo - missing the 1)
+sample_data <- within(sample_data, C[Sample_ID=="EWG_2019_Lib01_s442"] <- "7") #was C17 on sample_data (typo - added a 1)
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib01_s455"] <- "BESC-1201")
+sample_data <- within(sample_data, Genotype[Sample_ID=="EWG_2019_Lib01_s456"] <- "BESC-286")
+
+#There seems to be a sampling error from R2C37 to R4C37 in Corvallis so deleting all 3 from dataset
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib03_s181"),] #R4C37
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib03_s270"),] #R2C37
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib01_s291"),] #R4C37
+
+#Remove duplicate R3C10 in Corvallis with wrong genotype
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib03_s301"),] #R4C37
+
+# removed EWG_2019_Lib03_s353 and others because it's row col identity could not be corrected
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib03_s353"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib03_s015"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib01_s301"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib02_s129"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib02_s171"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib01_s442"),]
+sample_data<-sample_data[!(sample_data$Sample_ID=="EWG_2019_Lib01_s392"),]
+
+new <- left_join(sample_data, meta, by = "Genotype") 
+
+new <- new %>%  
+    mutate(R = as.numeric(R)) %>% 
+    mutate(C = as.numeric(C))
+
+new = mutate(new,
+              key = paste("C",C, "R",R, "B",Garden,Genotype, sep = ""))
+
+new <- left_join(new, coords, by = "key") 
+
+# Determine why there are still genotype missmatches - it is because of the controls
+Genotype_error <- new %>% 
+  select(Sample_ID, Genotype.x, Genotype.y) %>% 
+  filter(!Genotype.x %in% Genotype.y)
+
+# 
+
+# remove unneeded columns
+new <- new %>% 
+  select(-c(Comment, Latitude, Longitude, Pop.1, Genotype.y, Garden.y, Number, Col, Row, key))
+
+names(new)[7] <- "Genotype"
+names(new)[8] <- "Garden"
+names(new)[17] <- "Latitude"
+names(new)[18] <- "Longitude"
+```
+
+Genotype, block, garden - should be the same with #
+```{r}
+write.csv(all_tree_meta_data, "data/gardenData/all_tree_meta_data.csv")
+write.csv(new, "data/gardenData/Merged_meta&sampledata.csv", row.names = FALSE)
+write.csv(coords, "data/gardenData/coords_genotypes_updated.csv", row.names = FALSE)
+write.csv(sample_data, "data/gardenData/sample_data_corrected.csv", row.names = FALSE)
+```
+
+
+
+
+

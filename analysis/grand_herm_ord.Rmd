@@ -1,0 +1,239 @@
+---
+title: "Hermiston Ordination"
+author: "Sabrina Heitmann"
+date: "12/6/2021"
+output: html_document
+---
+
+****Added percent N and percent C to the ordination but didn't change it. Haven't completed for Corvallis yet.
+
+****Might need to unhash - 11/25/22
+```{r}
+library(vegan)
+library(tidyverse)
+library(phyloseq)
+library(magrittr)
+library(here)
+library(ggthemes)
+#library(mvabund)
+library(foreach)
+library(MASS)
+library(ggtext)
+library(ggnewscale)
+#library(ggvegan)
+library(cowplot)
+library(scico)
+library(patchwork)
+library(ggrepel)
+
+#source("code/ewg_functions.R")
+
+```
+
+```{r}
+th <- theme(axis.title = element_text(size = 15, face = "bold", colour = "grey30"), 
+       panel.background = element_blank(), panel.border = element_rect(fill = NA, colour = "grey30"), 
+       legend.key = element_blank(),
+       #axis.ticks = element_text(size = 15),
+       legend.title = element_text(size = 15, face = "bold", colour = "grey30"), 
+       legend.text = element_text(size = 13, colour = "grey30"), 
+       plot.title = element_text(size = 25))
+```
+
+```{r}
+#### Leaf trait data phyloseq object ####
+phy <- readRDS(here("output", "compiled", "phy.clean.rds"))
+
+(phy %<>% phyloseq::filter_taxa(., function(x){sum(x>0) > 0.01*nsamples(.)}, TRUE)) 
+```
+
+genotype mean phyloseq object
+```{r}
+phy.corv <- subset_samples(phy, Garden == "Hermiston")
+
+merged_genotype = merge_samples(phy.corv, "Genotype")
+
+meta <- merged_genotype %>% sample_data %>% data.frame()
+```
+
+find mean leaf trait values for each genotpe in corvallis
+```{r}
+leaf_trait_data <- read.csv(here("data", "gardenData", "trait_plus_meta_csvs", "trait_wmeta_allblocks.csv"))
+
+leaf_trait_data %<>%
+  filter(Garden == "Hermiston") %>%
+  dplyr::select(Sample_ID, Genotype, Region, Population, thick, SLA, LDMC, stomata_length, stomata_count, percent_N_weight, percent_C_weight)
+
+leaf_trait_data %<>% 
+  rename(LT = thick) %>%
+  rename(SL = stomata_length) %>%
+  rename(SD = stomata_count) %>%
+  rename(N = percent_N_weight) %>%
+  rename(C = percent_C_weight)
+
+ltd_avg <- leaf_trait_data %>%
+  dplyr::select(Genotype, LT:C) %>%
+  group_by(Genotype) %>%
+  summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
+  na.omit() #%>% #might be different than Corvallis - check back %>%
+  #mutate_at(c(2:9), funs(c(scale(.))))
+
+#add ltd metadata (Region, Population)
+meta_data <- leaf_trait_data %>% dplyr::select(Genotype, Region, Population)
+ltd_avg <- left_join(ltd_avg, meta_data, by = "Genotype") %>% unique()
+```
+
+find and remove genotype that is missing from leaf trait data but is in phyloseq object
+```{r}
+phyloseq_genotype <- meta %>%
+  rownames_to_column(var = "Genotype2")%>%
+  dplyr::select(Genotype2)
+
+ltd_genotype <- ltd_avg %>% dplyr::select(Genotype)
+
+which(!phyloseq_genotype$Genotype2 %in% ltd_genotype$Genotype) 
+#index: 12 = BESC-1212
+#index: 36 = BESC-273
+#index: 20 = BESC-1229
+#index: 51 = BESC-86
+
+#add genotypes back in
+ltd_avg <- rbind(c("BESC-1212", NA, NA, NA, NA, NA, NA, NA, NA, "FALSE", "FALSE"), ltd_avg)
+ltd_avg <- rbind(c("BESC-273", NA, NA, NA, NA, NA, NA, NA, NA, "FALSE", "FALSE"), ltd_avg)
+ltd_avg <- rbind(c("BESC-1229", NA, NA, NA, NA, NA, NA, NA, NA, "FALSE", "FALSE"), ltd_avg)
+ltd_avg <- rbind(c("BESC-86", NA, NA, NA, NA, NA, NA, NA, NA, "FALSE", "FALSE"), ltd_avg)
+ltd_avg <- ltd_avg %>% column_to_rownames(var = "Genotype")
+
+sample_data(merged_genotype) <- ltd_avg
+
+#remove from phyloseq object
+merged_genotype = subset_samples(merged_genotype, Population != "FALSE")
+meta_data <- merged_genotype %>% sample_data %>% data.frame
+meta_data[,1:8] <- sapply(meta_data[,1:8],as.numeric)
+
+#Each genotype has equal contribution to OTU relative abundance
+merged_genotype <-  transform_sample_counts(merged_genotype, function(x) (x / sum(x)))
+#test <- merged_genotype %>% otu_table %>% data.frame()
+#test$new <- rowSums( test[,1:331] )
+
+```
+
+Relative abundance of melampsora/mycosphaerella
+```{r}
+phy.rust = subset_taxa(merged_genotype, Genus=="g__Melampsora")
+phy.mycosph = subset_taxa(merged_genotype, Genus=="g__Mycosphaerella")
+#phy.disease = subset_taxa(merged_genotype, Genus=="g__Melampsora" | Genus=="g__Mycosphaerella")
+
+phy.clean_otu <- merged_genotype %>% otu_table %>% data.frame
+
+phy.clean_otu %<>%
+  rownames_to_column() %>%
+  dplyr::select(F.1, F.2, rowname)
+  #mutate(add = F.1 + F.2)
+  #mutate(over1 = ifelse(add > 1, "TRUE", add))
+
+meta_data <- merged_genotype %>% sample_data %>% data.frame %>% rownames_to_column()
+
+otu_abund <- left_join(phy.clean_otu, meta_data, by = "rowname")
+
+otu_abund[,4:10] <- sapply(otu_abund[,4:10],as.numeric)
+
+all_data <- otu_abund %>%
+  mutate_at(c(1,2,4:10), funs(c(scale(.))))
+```
+
+NMDS with environmental variables overlaid
+Removed overlay for Posy (but reverted)
+```{r}
+set.seed(108)
+
+phy.dist <- merged_genotype %>% phyloseq::distance("bray")
+phy.ord <- metaMDS(phy.dist, k=2, trymax = 50, engine = "monoMDS")
+
+#Find significant correlations between leaf traits and NMDS axes
+ef <- envfit (phy.ord ~ LT + SD + LDMC + SLA + C + N + SL, data = all_data, perm = 999, choices = 1:2)
+ef
+
+#Adjust p-values (FDR correction)
+ef.adj <- ef 
+pvals.adj <- p.adjust (ef$vectors$pvals, method = 'fdr')
+ef.adj$vectors$pvals <- pvals.adj
+ef.adj
+
+#Extract the best variables (leaf traits with p-value <= 0.05)
+bestEnvVariables<-names(ef.adj$vectors$pvals)[ef.adj$vectors$pvals<=0.05]
+ 
+#Last two are NA entries, so we have to remove them
+bestEnvVariables<-bestEnvVariables[!is.na(bestEnvVariables)]
+ 
+#We are now going to use only those environmental variables in envfit that were found significant
+eval(parse(text=paste("ef <- envfit(phy.ord ~ ",do.call(paste,c(as.list(bestEnvVariables),sep=" + ")),",data=all_data)",sep="")))
+
+ef
+
+#P-values revert back so need to adjust again
+ef.adj <- ef 
+pvals.adj <- p.adjust (ef$vectors$pvals, method = 'fdr')
+ef.adj$vectors$pvals <- pvals.adj
+ef.adj
+
+
+#extract NMDS scores and columns from original data that will be used in plot
+data.scores = as.data.frame(vegan::scores(phy.ord))
+data.scores$Garden = "Hermiston"
+data.scores
+#write.csv(data.scores, file = "output/csvs/herm_nmds.csv") Check back
+data.scores$Region = all_data$Region
+data.scores$Population = all_data$Population
+
+#extracting info from continuous environmental variables 
+#changed vector plot fill to .2 because they were distorting samples in ordination
+#removed ordiArrowMul
+#ef_coord_cont = as.data.frame(vegan::scores(ef.adj, "vectors")) * ordiArrowMul(ef.adj, fill = .3)
+ef_coord_cont= as.data.frame(vegan::scores(ef.adj, "vectors")) #* ordiArrowMul(ef.adj)
+#ef_coord_cat = as.data.frame(scores(ef.adj, "factors")) * ordiArrowMul(ef)
+
+#?ordiArrowMul
+#ef_coord_cat %<>%
+#  rownames_to_column("name") %>%
+#  filter(!grepl("Region", name)) %>%
+#  mutate(name = str_remove(name, "Population")) %>%
+#  mutate(name = str_remove(name, "Region")) %>%
+#  column_to_rownames("name")
+
+pal.region <- c("#fb832d", "#016392")
+
+p <- ggplot(data = data.scores, aes(x = NMDS1, y = NMDS2)) + 
+     geom_point(data = data.scores, aes(colour = Region), size = 3.5) + 
+     scale_colour_manual(values = pal.region)  +    
+     geom_segment(aes(x = 0, y = 0, xend = NMDS1, yend = NMDS2), 
+       data = ef_coord_cont, size =1, alpha = 0.5, colour = "grey30", arrow = arrow(length = unit(0.4, "cm"))) +
+     geom_text_repel(data = ef_coord_cont, aes(x = NMDS1, y = NMDS2), colour = "grey30", 
+       fontface = "bold", label = row.names(ef_coord_cont), size = 4.5, direction = "both") + 
+     theme(axis.title = element_text(size = 15, face = "bold", colour = "grey30"), 
+       panel.background = element_blank(), panel.border = element_rect(fill = NA, colour = "grey30"), 
+       axis.ticks = element_blank(), axis.text = element_blank(), 
+       legend.title = element_text(size = 15, face = "bold", colour = "grey30"), 
+       legend.text = element_text(size = 13, colour = "grey30"), 
+       plot.title = element_text(size = 25)) + 
+     labs(colour = "Ecotype") +
+     theme_bw() +
+     #guides(color = "none") + 
+     ggtitle("Hermiston")
+
+p
+```
+
+p <-ggsave("output/figs/figure5b.png")
+
+```{r}
+obj <- dbrda(phy.dist~ LT + SL + SD + LDMC + SLA + C + N , data=all_data)
+
+
+R2 <- RsquareAdj(obj)$r.squared
+R2
+
+R2adj <- RsquareAdj(obj)$adj.r.squared
+R2adj
+
+```

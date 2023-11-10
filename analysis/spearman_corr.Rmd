@@ -1,0 +1,133 @@
+---
+title: "Correlation plots"
+author: "Sabrina Heitmann"
+date: "4/13/2022"
+output: html_document
+---
+```{r}
+library(vegan)
+library(tidyverse)
+library(phyloseq)
+library(magrittr)
+library(here)
+library(ggthemes)
+library(ggpubr)
+```
+
+Add iNEXT diversity and richness estimates to meta data and average estimates by genotype within garden
+```{r}
+phy.clean <- readRDS(here("EWG_github_2023", "output", "compiled", "phy.clean.rds"))
+
+meta_data <- phy.clean %>% sample_data %>% data.frame %>% rownames_to_column("SampID")
+div <- read.csv(here("EWG_github_2023","output", "csvs", "inext_div.csv")) %>% dplyr::select(SampID,Estimate) %>% rename(Diversity = Estimate)
+rich <- read.csv(here("EWG_github_2023","output", "csvs", "inext_rich.csv")) %>% dplyr::select(SampID,Estimate) %>% rename(Richness = Estimate)
+
+estimates <- left_join(div,rich)
+meta_data <- left_join(meta_data, estimates)
+
+mean_diversity <- meta_data %>%
+  group_by(Garden, Genotype, Region) %>%
+  summarise_at(c("Diversity", "Richness"), mean, na.rm = TRUE)
+```
+Find mean leaf trait values for each genotype
+*This removed two genotypes that didn't have stomata data 
+```{r}
+leaf_trait_data <- read.csv(here("EWG_github_2023","data", "gardenData", "trait_plus_meta_csvs", "trait_wmeta_allblocks.csv"))
+
+leaf_trait_data %<>%
+  dplyr::select(Sample_ID, Garden, Genotype, Region, Population, thick, SLA, LDMC, stomata_length, stomata_count, percent_C_weight,percent_N_weight)
+
+leaf_trait_data %<>% 
+  rename(LT = thick) %>%
+  rename(SL = stomata_length) %>%
+  rename(SD = stomata_count) %>%
+  rename(N = percent_N_weight) %>%
+  rename(C = percent_C_weight)
+         
+
+ltd_avg <- leaf_trait_data %>%
+  dplyr::select(Garden, Genotype, LT:N) %>%
+  group_by(Garden, Genotype) %>%
+  summarise(across(everything(), ~ mean(.x, na.rm = TRUE))) %>%
+  na.omit()
+
+ltd_avg <- left_join(ltd_avg, mean_diversity, by = c("Genotype", "Garden")) %>% unique()
+```
+Relative abundance of F.1 Cladosporium and F.2 - Melampsora
+```{r}
+phy.clean <- readRDS(here("EWG_github_2023","output", "compiled", "phy.clean.rds"))
+
+phy.clean %<>% phyloseq::filter_taxa(., function(x){sum(x>0) > 0.01*nsamples(.)}, TRUE)
+phy.clean <-  transform_sample_counts(phy.clean, function(x) (x / sum(x)))
+
+phy.rust = subset_taxa(phy.clean, Genus=="g__Melampsora")
+phy.mycosph = subset_taxa(phy.clean, Genus=="g__Mycosphaerella")
+
+phy.clean_otu <- phy.clean %>% otu_table %>% data.frame
+
+phy.clean_otu %<>%
+  rownames_to_column() %>%
+  dplyr::select(F.1, F.2, rowname)
+
+meta_data <- phy.clean %>% sample_data %>% data.frame %>% rownames_to_column() %>% dplyr::select(Genotype, Garden, rowname)
+
+otu_abund <- left_join(phy.clean_otu, meta_data, by = "rowname")
+
+otu_abund <- otu_abund %>%
+  dplyr::select(Garden, Genotype, F.1, F.2) %>%
+  group_by(Garden, Genotype) %>%
+  summarise(across(everything(), ~ mean(.x, na.rm = TRUE)))
+
+otu_abund_wdiv <- left_join(otu_abund, ltd_avg, by = c("Genotype", "Garden")) %>% na.omit()
+
+otu_abund_wdiv %<>% mutate_at(c(3:11, 13, 14), scale) 
+```
+
+Calculate all Spearman correlations with Bonferroni adjustments
+```{r}
+library(Hmisc)
+# ++++++++++++++++++++++++++++
+# flattenCorrMatrix
+# ++++++++++++++++++++++++++++
+# cormat : matrix of the correlation coefficients
+# pmat : matrix of the correlation p-values
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+
+otu_abund_wdiv_all <- otu_abund_wdiv %>% dplyr::select(-c(Region,Garden,Genotype)) %>% ungroup()
+otu_abund_wdiv_all<-otu_abund_wdiv_all[,-1]
+
+otu_res_all<-rcorr(as.matrix(otu_abund_wdiv_all, type="spearman"))
+
+all_corrs <- flattenCorrMatrix(otu_res_all$r, otu_res_all$P)
+all_corrs$p.adjusted <- p.adjust(all_corrs$p, method = "fdr")
+```
+Spearman correlation figure between leaf traits, alpha diversity measures, dominant OTUs by rel abund (F.1 = Cladosporium, F.2 = Melampsora)
+```{r}
+library(ggstatsplot)
+otu_abund_wdiv_all <- otu_abund_wdiv %>% dplyr::select(-c(Region,Genotype)) %>% ungroup()
+corr_plot <- grouped_ggcorrmat(
+  otu_abund_wdiv_all,
+  sig.level = 1, # Recorded sig corr at 0.05 but put sig.level = 1 to remove "X"s from figure
+  p.adjust.method = "fdr", 
+  type = "n",
+  grouping.var = Garden,
+  plotgrid.args = list(nrow = 1),
+  insig = 'blank',
+  pch.col = '#F0E442',
+  annotation.args = list(
+    tag_levels = "a",
+    title = "Relationship between leaf traits and the microbiome across gardens"
+  )
+  )
+
+corr_plot
+ggsave("EWG_github_2023/output/figs/figure6.png")
+```

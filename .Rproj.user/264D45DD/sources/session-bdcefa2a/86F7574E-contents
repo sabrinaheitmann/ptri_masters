@@ -1,0 +1,201 @@
+---
+title: "DataWrangling"
+author: "Sabrina Heitmann"
+date: "10/15/2020"
+output: html_document
+---
+
+```{r, warning=F, message=F}
+#' Load packages
+library(tidyverse)
+library(magrittr)
+library(phyloseq)
+library(ggthemes)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+#' source custom functions
+for(f in list.files("code/fun",full.names = T)){source(f)}
+```
+
+```{r}
+#' Load full data as phyloseq object
+phy <- readRDS("output/compiled/phy.rds")
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+
+```{r}
+#' ### Positive controls
+#' Each of the 4 libraries included 3(?) identical sequencing run consistency check samples, including two negative controls and one SynCom positive contol.
+phy %>% sweepOTUs %>% proportional %>%
+  phyloseq::plot_bar("Lib_ID",fill="Family") +
+  facet_wrap(~Genotype,nrow=2) +
+  theme_classic() +
+  theme(legend.position = "none",axis.text.x = element_text(angle=90)) 
+```
+
+Only 1 of the OTUs showed up across all of the positive controls even though I added a SymCom
+```{r}
+#' Each plate included a well with a single species positive control. We can look at how often other taxa show up in the single species control as a potential measure of cross talk.
+pos = psmelt(phy)
+
+relabund.pos <- pos %>%
+  dplyr::filter(Genotype == "Pos_control") %>%
+  dplyr::filter(!(Abundance == 0)) %>%
+  group_by(Sample) %>% 
+  mutate(sum_abund=sum(Abundance)) %>%
+  mutate(relabund = Abundance / sum_abund) %>%
+  select(OTU, Abundance, relabund, sum_abund, Sample, Class, Genus)
+
+#relabund.pos$relabund <- log(relabund.pos$relabund)
+
+ggplot(data = relabund.pos, aes(x=Sample, y=relabund, fill=Genus)) +
+  geom_bar(stat = "identity" , width = 1) +
+  labs(title = "Identity of fungi in positive controls", 
+       subtitle = "Log scale") +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_color_colorblind()
+
+
+ggsave("output/figs/exploratory/relabund_pos_cont.png", width = 5, height = 3)
+
+```
+
+```{r}
+#' Each plate included a well with a single species positive control. We can look at how often other taxa show up in the single species control as a potential measure of cross talk.
+phy %>% prune_samples(grepl("Pos_control",sample_data(.)$Genotype),.) %>% 
+  sweepOTUs %>% otu_table() %>% t %>%
+  knitr::kable(caption="All OTUs detected in single species positive controls") %>% 
+  kable_styling(full_width = F, latex_options="striped")
+```
+
+I just removed the Positive samples and not the taxa (because I don't know which taxa were actually in the Positive controls) - need to revisit 10-16
+```{r}
+phy %<>%
+  prune_samples(!grepl("Pos",sample_data(.)$Genotype),.)
+```
+
+```{r}
+phy.neg <- phy %>% prune_samples(grepl("control",sample_data(.)$Genotype),.) %>% sweepOTUs()
+
+phy.neg.tab <- tax_table(phy.neg) %>% data.frame %>% 
+  transmute(
+    OTU=taxa_names(phy.neg),
+    totSeqs=taxa_sums(phy %>% prune_taxa(taxa_names(phy.neg),.)),
+    totNegSeqs = taxa_sums(phy.neg),
+    pctSeqsNeg = round((100*totNegSeqs/totSeqs),4),
+    Genus=Genus
+  )
+phy.neg.tab %>%  kable(caption = "OTUs in negative controls, putative contaminants highlighted") %>%
+  kable_styling(full_width = F) %>% 
+  row_spec(which(phy.neg.tab$pctSeqsNeg>2), background = "#FFCCCC")
+```
+
+```{r}
+#' Remove putative contam and negative control samples
+phy %<>% prune_taxa(!(taxa_names(.) %in% (phy.neg.tab %>% filter(pctSeqsNeg>2) %>% .$OTU)),.) %>%
+  prune_samples(!grepl("control",sample_data(.)$Genotype),.)
+
+phy.clean <- phy
+```
+
+```{r}
+#' Relabel OTUs
+otu.names <- paste0("F.",1:ntaxa(phy.clean))
+names(otu.names) <- taxa_names(phy.clean)[order(taxa_sums(phy.clean),decreasing = T)]
+taxa_names(phy.clean) <- otu.names[taxa_names(phy.clean)]
+```
+
+Sequencing depth is lowest in Lib01 (which was expected)
+```{r}
+#' # Sequencing depth
+plotSeqDepth <- function(phy,cutoff){
+  pctPass <- phy %>% sample_data %>% data.frame %>% 
+    mutate(SeqDepth=sample_sums(phy),
+           pass=SeqDepth>cutoff) %>% 
+    group_by(Lib_ID) %>%
+    summarise(nSamps=n(),pctPass=round(100*sum(pass)/n(),1))
+  phy %>% sample_data %>% data.frame %>%  
+    mutate(SeqDepth=sample_sums(phy)) %>% 
+    .[order(.$SeqDepth),] %>%
+    mutate(Index=factor(seq(nrow(.)))) %>%
+    ggplot(aes(x=Index, y=SeqDepth,color=SeqDepth<cutoff)) + 
+    geom_point(position=position_jitter(width=50),alpha=0.5,shape=19) +
+    geom_text(aes(x=-Inf,y=Inf,label=paste0(nSamps," samples")),data=pctPass,inherit.aes = F, hjust=-0.1, vjust=1.5) +
+    geom_text(aes(x=-Inf,y=Inf,label=paste0(pctPass, "% > ",cutoff, " seqs")),data=pctPass,inherit.aes = F, hjust=-0.1, vjust=3) +
+    scale_color_calc(name=paste0("Sequencing depth > ",cutoff,"\n")) +
+    facet_wrap(~Lib_ID,scales="free") +
+    theme_classic() + 
+    theme(legend.position = "none",axis.text.x = element_blank(),axis.ticks.x = element_blank()) 
+}
+plotSeqDepth(phy.clean,2000)
+```
+
+
+Sequencing depth compared by gardens. Both have the same curve but there are not as many higher sequences in Hermiston.
+```{r}
+#' # Sequencing depth
+plotSeqDepth <- function(phy,cutoff){
+  pctPass <- phy %>% sample_data %>% data.frame %>% 
+    mutate(SeqDepth=sample_sums(phy),
+           pass=SeqDepth>cutoff) %>% 
+    group_by(Garden) %>%
+    summarise(nSamps=n(),pctPass=round(100*sum(pass)/n(),1))
+  phy %>% sample_data %>% data.frame %>%  
+    mutate(SeqDepth=sample_sums(phy)) %>% 
+    .[order(.$SeqDepth),] %>%
+    mutate(Index=factor(seq(nrow(.)))) %>%
+    ggplot(aes(x=Index, y=SeqDepth,color=SeqDepth<cutoff)) + 
+    geom_point(position=position_jitter(width=50),alpha=0.5,shape=19) +
+    geom_text(aes(x=-Inf,y=Inf,label=paste0(nSamps," samples")),data=pctPass,inherit.aes = F, hjust=-0.1, vjust=1.5) +
+    geom_text(aes(x=-Inf,y=Inf,label=paste0(pctPass, "% > ",cutoff, " seqs")),data=pctPass,inherit.aes = F, hjust=-0.1, vjust=3) +
+    scale_color_calc(name=paste0("Sequencing depth > ",cutoff,"\n")) +
+    facet_wrap(~Garden) +
+    theme_classic() + 
+    theme(legend.position = "none",axis.text.x = element_blank(),axis.ticks.x = element_blank()) 
+}
+plotSeqDepth(phy.clean,2000)
+```
+
+```{r}
+#' Remove putative contam and negative control samples
+phy %<>% prune_taxa(!(taxa_names(.) %in% (phy.neg.tab %>% filter(pctSeqsNeg>2) %>% .$OTU)),.) %>%
+  prune_samples(!grepl("control",sample_data(.)$Genotype),.)
+
+phy.clean <- phy
+```
+
+```{r}
+#' Relabel OTUs
+otu.names <- paste0("F.",1:ntaxa(phy.clean))
+names(otu.names) <- taxa_names(phy.clean)[order(taxa_sums(phy.clean),decreasing = T)]
+taxa_names(phy.clean) <- otu.names[taxa_names(phy.clean)]
+```
+
+Remove samples with less than 2000
+```{r}
+depth.filt <- sample_sums(phy.clean)>2000
+phy.clean %<>% prune_samples(depth.filt,.) %>% sweepOTUs
+```
+
+```{r}
+#' # Outputs
+saveRDS(phy.clean,"output/compiled/phy.clean.rds")
+```
+
+```{r}
+#write tables
+phy.clean %>% sample_data %>% write.csv("output/compiled/sampleData.csv")
+phy.clean %>% tax_table %>% write.csv("output/compiled/taxonomy.csv")
+phy.clean %>% otu_table %>% write.csv("output/compiled/otuTable.all.csv")
+phy.clean %>% subset_samples(Garden=="Hermiston") %>% sweepOTUs %>%
+  otu_table %>% write.csv("output/compiled/otuTable.Hermiston.csv")
+phy.clean %>% subset_samples(Garden=="Corvallis") %>% sweepOTUs %>%
+  otu_table %>% write.csv("output/compiled/otuTable.Corvallis.csv")
+
+#' Report session info
+sessionInfo()
+```
+
