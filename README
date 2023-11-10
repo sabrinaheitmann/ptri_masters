@@ -20,7 +20,8 @@ output/
 
 analysis/
 
-  taxa_comp.R (Beginning of MS Results) - To identify fungal community composition at different taxonomic levels 
+  taxa_comp.R (Beginning of MS Results) - To identify fungal community composition at different taxonomic levels
+  permanovas.R - G, E, GxE effects on foliar fungal microbiome
   ewg_map.R (Figure 1) - Location of Populus trichocarpa reciprocal common gardens in Corvallis, OR and Hermiston, OR
   mean_abund_ord.R (Figure 2) - Distance-based redundancy analysis (dbRDA) of foliar fungal communities constrained by  garden, ecotype, and their interaction
   iNext.R (Figure 3; Figure 7) - Box plots of observed richness and Shannon diversity of foliar fungal communities of Populus trichocarpa in the Corvallis and Hermiston gardens, including ANOVAs and Tukey's HSD (Figure 3).
@@ -30,5 +31,6 @@ analysis/
   grand_herm_ord.Rmd (Figure 5b) - Non-metric multidimensional scaling (NMDS) ordination of foliar fungal communities associated with the Hermiston garden.
   spearman_corr.Rmd (Figure 6) - Spearman correlation figure between leaf traits, alpha diversity measures, dominant OTUs by rel abund (F.1 = Cladosporium, F.2 = Melampsora)
   relabund_top10.R (Figure S1) - Centered log-ratio of the top 10 dominant OTUs by relative abundance and ANOVAs to test genotype-by-garden interaction
-  microbiome_trait_geno_effect.R (Figure S2) - Genotype effects on leaf traits and the foliar fungal microbiome        
+  microbiome_trait_geno_effect.R (Figure S2) - Genotype effects on leaf traits and the foliar fungal microbiome 
   leaf_trait_data_analysis.R (Table 4) - Leaf trait tidying and ANOVA for each leaf trait
+
