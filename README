@@ -1,42 +1,34 @@
 data/
-  all_tree_meta_data.csv - meta data (position in garden, block, genetic information)    for all trees (including failed Illumina samples)
-  leafmeta.csv - sample data (sample #, Illumina info) + meta data for the subset of     trees that had leaf trait data collected 
-  Merged_meta&sampledata.csv - sample data + meta data for all trees with successful     Illumina samples
+  all_tree_meta_data.csv - meta data (position in garden, block, genetic information) for all trees (including failed Illumina samples)
+  leafmeta.csv - sample data (sample #, Illumina info) + meta data for the subset of trees that had leaf trait data collected 
+  Merged_meta&sampledata.csv - sample data + meta data for all trees with successful Illumina samples
 
 pre-processing/
-  compile.fungi.R - remove host contamination, cluster OTUs, assign taxonomy of ITS2     seqs (DECIPHER, ITSx)
+  compile.fungi.R - remove host contamination, cluster OTUs, assign taxonomy of ITS2 seqs (DECIPHER, ITSx)
   DataWrangling.R - clean samples and create Phyloseq object
   denoise.R - remove erroneous OTUs from ITS2 seqs (DADA2)
-  trimSort.sh - shell script with programs Cutadapt and Seqpurge to remove primers and   adaptors from the sequences
-  Merging_metadata_sampledata.R - merged tree meta data and Illumina sample data and     fixed labeling discrepancies 
+  trimSort.sh - shell script with programs Cutadapt and Seqpurge to remove primers and adaptors from the sequences
+  Merging_metadata_sampledata.R - merged tree meta data and Illumina sample data and fixed labeling discrepancies 
 	
 output/
   compiled/phy.clean.rds - Phyloseq object
 
-  csvs/ew_geno_effect.csv - output from leaf_trait_data_analysis.R/read into             microbiome_trait_geno_effect.R
+  csvs/ew_geno_effect.csv - output from leaf_trait_data_analysis.R/read into microbiome_trait_geno_effect.R
   csvs/inext_div.csv - output from iNext.R/read into iNext.R
   csvs/inext_rich.csv - output from iNext.R/read into iNext.R
-  csvs/leaf_trait_anovas.csv - output from leaf_trait_data_analysis.R/read into Excel    to produce Table 4
+  csvs/leaf_trait_anovas.csv - output from leaf_trait_data_analysis.R/read into Excel to produce Table 4
 
 analysis/
 
-  taxa_comp.R (Beginning of MS Results) - To identify fungal community composition at    different taxonomic levels 
-
-  ewg_map.R (Figure 1) - Location of Populus trichocarpa reciprocal common gardens in    Corvallis, OR and Hermiston, OR
-
-  mean_abund_ord.R (Figure 2) - Distance-based redundancy analysis (dbRDA) of foliar     fungal communities constrained by  garden, ecotype, and their interaction
-
-  iNext.R (Figure 3; Figure 7) - Box plots of observed richness and Shannon diversity    of foliar fungal communities of Populus trichocarpa in the Corvallis and Hermiston     gardens, including ANOVAs and Tukey's HSD (Fig 3).Plots of stomatal length versus      richness and diversity measures across gardens (Figure 7)
-
+  taxa_comp.R (Beginning of MS Results) - To identify fungal community composition at different taxonomic levels 
+  ewg_map.R (Figure 1) - Location of Populus trichocarpa reciprocal common gardens in Corvallis, OR and Hermiston, OR
+  mean_abund_ord.R (Figure 2) - Distance-based redundancy analysis (dbRDA) of foliar fungal communities constrained by  garden, ecotype, and their interaction
+  iNext.R (Figure 3; Figure 7) - Box plots of observed richness and Shannon diversity of foliar fungal communities of Populus trichocarpa in the Corvallis and Hermiston gardens, including ANOVAs and Tukey's HSD (Figure 3).
+				 Plots of stomatal length versus richness and diversity measures across gardens (Figure 7)
   leaf_trait_summary_stats.R (Figure 4) - Leaf trait values across gardens and ecotypes
-
-  grand_ord_corv.Rmd (Figure 5a) - Non-metric multidimensional scaling (NMDS)            ordination of foliar fungal communities associated with the Corvallis garden. 
-
-  grand_herm_ord.Rmd (Figure 5b) - Non-metric multidimensional scaling (NMDS)            ordination of foliar fungal communities associated with the Hermiston garden.
-
-  spearman_corr.Rmd (Figure 6) - Spearman correlation figure between leaf traits, alpha   diversity measures, dominant OTUs by rel abund (F.1 = Cladosporium, F.2 = Melampsora)
-
-  relabund_top10.R (Figure S1) - Centered log-ratio of the top 10 dominant OTUs by       relative abundance and ANOVAs to test genotype-by-garden interaction
-
-  microbiome_trait_geno_effect.R (Figure S2) - Genotype effects on leaf traits and the   foliar fungal microbiome        
-  leaf_trait_data_analysis.R (Table 4) - Leaf trait tidying and ANOVA for each leaf      trait
+  grand_ord_corv.Rmd (Figure 5a) - Non-metric multidimensional scaling (NMDS) ordination of foliar fungal communities associated with the Corvallis garden. 
+  grand_herm_ord.Rmd (Figure 5b) - Non-metric multidimensional scaling (NMDS) ordination of foliar fungal communities associated with the Hermiston garden.
+  spearman_corr.Rmd (Figure 6) - Spearman correlation figure between leaf traits, alpha diversity measures, dominant OTUs by rel abund (F.1 = Cladosporium, F.2 = Melampsora)
+  relabund_top10.R (Figure S1) - Centered log-ratio of the top 10 dominant OTUs by relative abundance and ANOVAs to test genotype-by-garden interaction
+  microbiome_trait_geno_effect.R (Figure S2) - Genotype effects on leaf traits and the foliar fungal microbiome        
+  leaf_trait_data_analysis.R (Table 4) - Leaf trait tidying and ANOVA for each leaf trait
